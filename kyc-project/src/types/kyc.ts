@@ -10,3 +10,13 @@ export interface KYCState {
     capturedImage: string | null;
     status: 'idle' | 'checking' | 'success' | 'error';
   }
+
+
+export type VerificationStep = 
+  | 'instructions' 
+  | 'initializing'
+  | 'initial-blink' 
+  | 'look-straight' 
+  | 'final-blink' 
+  | 'processing' 
+  | 'complete';
