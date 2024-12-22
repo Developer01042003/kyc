@@ -81,6 +81,18 @@ const KYCForm = () => {
       mediaRecorder.start();
       mediaRecorderRef.current = mediaRecorder;
 
+      // Show instructions for liveness test
+      toast.custom((t) => (
+        <div className="bg-blue-500 text-white px-4 py-2 rounded-lg">
+          <p>Verification Tips:</p>
+          <ul className="list-disc list-inside text-sm">
+            <li>Look directly at the camera</li>
+            <li>Blink once during the recording</li>
+            <li>Ensure good lighting</li>
+          </ul>
+        </div>
+      ), { duration: 4000 });
+
       // Countdown timer
       const timer = setInterval(() => {
         setRecordingTime(prev => {
@@ -122,14 +134,6 @@ const KYCForm = () => {
         return;
       }
 
-      // Validate blob size (optional: limit to 10MB)
-      const maxSize = 10 * 1024 * 1024; // 10MB
-      if (videoBlob.size > maxSize) {
-        toast.error('Video file is too large. Maximum 10MB allowed.');
-        resetVerification();
-        return;
-      }
-
       // Prepare form data
       const videoFile = new File([videoBlob], 'kyc_video.webm', { 
         type: 'video/webm' 
@@ -143,8 +147,7 @@ const KYCForm = () => {
 
       // Handle response
       if (response.success) {
-        // Success scenario
-        toast.success(response.message || 'KYC Verification Successful!');
+        toast.success('KYC Verification Successful!');
         setStep('complete');
 
         // Redirect after a short delay
@@ -221,7 +224,7 @@ const KYCForm = () => {
               <li>Ensure good lighting</li>
               <li>Remove glasses or face coverings</li>
               <li>Look directly at the camera</li>
-              <li>Recording will be 4 seconds long</li>
+              <li>Blink once during the 4-second recording</li>
             </ul>
           </div>
           <button
@@ -252,6 +255,9 @@ const KYCForm = () => {
           <div className="text-xl font-bold text-red-500">
             Recording: {4 - recordingTime} seconds left
           </div>
+          <p className="text-sm text-gray-600 mt-2">
+            Remember to blink once during recording
+          </p>
         </div>
       )}
 
@@ -267,26 +273,9 @@ const KYCForm = () => {
       {/* Completion Step */}
       {step === 'complete' && (
         <div className="text-center">
-          <div className="text-green-500 text-6xl mb-4">
-            <svg 
-              xmlns="http://www.w3.org/2000/svg" 
-              className="h-16 w-16 mx-auto" 
-              viewBox="0 0 20 20" 
-              fill="currentColor"
-            >
-              <path 
-                fillRule="evenodd" 
-                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" 
-                clipRule="evenodd" 
-              />
-            </svg>
-          </div>
-          <h3 className="text-2xl font-semibold text-green-700">
-            Verification Complete!
-          </h3>
-          <p className="text-gray-600 mt-2">
-            You will be redirected to the dashboard shortly...
-          </p>
+          <div className="text-green-500 text-6xl mb-4">✓</div>
+          <h3 className="text-2xl font-semibold">Verification Complete!</h3>
+          <p className="text-gray-600">Redirecting to dashboard...</p>
         </div>
       )}
     </div>
