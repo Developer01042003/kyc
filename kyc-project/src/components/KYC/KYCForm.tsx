@@ -4,32 +4,22 @@ import { toast } from 'react-hot-toast';
 import { submitKYC } from '../../api/api';
 import { useNavigate } from 'react-router-dom';
 import * as faceapi from 'face-api.js';
-
-type VerificationStep = 
-  | 'instructions' 
-  | 'initializing' 
-  | 'detecting' 
-  | 'blinking' 
-  | 'holding' 
-  | 'processing' 
-  | 'complete';
+import type { VerificationStep } from '../../types/kyc';
 
 const KYCForm = () => {
   const navigate = useNavigate();
   const webcamRef = useRef<Webcam>(null);
   const [loading, setLoading] = useState(false);
   const [modelsLoaded, setModelsLoaded] = useState(false);
-  const [cameraReady, setCameraReady] = useState(false);
   const [step, setStep] = useState<VerificationStep>('instructions');
+  const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [faceDetected, setFaceDetected] = useState(false);
   const [blinkCount, setBlinkCount] = useState(0);
-  const [holdTimer, setHoldTimer] = useState(2); // 2 seconds hold time
-  const [retryAttempt, setRetryAttempt] = useState(0);
   const lastBlinkTime = useRef(Date.now());
 
   const videoConstraints = {
-    width: 640,
-    height: 480,
+    width: 1280,
+    height: 720,
     facingMode: "user"
   };
 
@@ -37,27 +27,77 @@ const KYCForm = () => {
   useEffect(() => {
     const loadModels = async () => {
       try {
+        setLoading(true);
+        console.log('Loading face detection models...');
+        
+        // Test if models are accessible
+        const testResponse = await fetch('/models/tiny_face_detector_model-weights_manifest.json');
+        if (!testResponse.ok) {
+          throw new Error('Models not accessible');
+        }
+
         await Promise.all([
           faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
           faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
           faceapi.nets.faceExpressionNet.loadFromUri('/models')
         ]);
-        setModelsLoaded(true);
+
         console.log('Face detection models loaded successfully');
+        setModelsLoaded(true);
+        toast.success('Face detection initialized');
       } catch (error) {
-        console.error('Error loading models:', error);
-        if (retryAttempt === 0) {
-          toast.error('Failed to initialize face detection. Retrying...');
-        }
-        setRetryAttempt(prev => prev + 1);
-        setTimeout(loadModels, 2000);
+        console.error('Error loading face detection models:', error);
+        toast.error('Failed to initialize face detection. Please refresh the page.');
+      } finally {
+        setLoading(false);
       }
     };
 
-    if (cameraReady && !modelsLoaded) {
+    if (step === 'initializing') {
       loadModels();
     }
-  }, [cameraReady, retryAttempt]);
+  }, [step]);
+
+  // Face detection loop
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+
+    const detectFace = async () => {
+      if (!webcamRef.current?.video || !modelsLoaded) return;
+
+      try {
+        const detection = await faceapi
+          .detectSingleFace(
+            webcamRef.current.video,
+            new faceapi.TinyFaceDetectorOptions({
+              inputSize: 320,
+              scoreThreshold: 0.3
+            })
+          )
+          .withFaceLandmarks();
+
+        if (detection) {
+          setFaceDetected(true);
+          
+          if (step === 'initial-blink' || step === 'final-blink') {
+            checkBlink(detection.landmarks);
+          } else if (step === 'look-straight') {
+            checkStraightFace(detection);
+          }
+        } else {
+          setFaceDetected(false);
+        }
+      } catch (error) {
+        console.error('Face detection error:', error);
+      }
+    };
+
+    if (modelsLoaded && ['initial-blink', 'look-straight', 'final-blink'].includes(step)) {
+      interval = setInterval(detectFace, 100);
+    }
+
+    return () => clearInterval(interval);
+  }, [step, modelsLoaded]);
 
   const checkBlink = (landmarks: faceapi.FaceLandmarks68) => {
     const leftEye = landmarks.getLeftEye();
@@ -68,120 +108,38 @@ const KYCForm = () => {
     const averageEAR = (leftEAR + rightEAR) / 2;
 
     const now = Date.now();
-    if (averageEAR < 0.2 && now - lastBlinkTime.current > 500) { // 500ms cooldown between blinks
+    if (averageEAR < 0.2 && now - lastBlinkTime.current > 500) {
       lastBlinkTime.current = now;
       setBlinkCount(prev => {
         const newCount = prev + 1;
-        if (newCount === 2) {
-          toast.success('Blinks detected! Now hold still...');
-          setStep('holding');
+        if (step === 'initial-blink' && newCount >= 1) {
+          toast.success('Initial blink detected!');
+          setStep('look-straight');
+        } else if (step === 'final-blink' && newCount >= 2) {
+          toast.success('Final blink detected!');
+          autoCapture();
         }
         return newCount;
       });
     }
   };
 
-  const getEyeAspectRatio = (eye: faceapi.Point[]) => {
-    const verticalDist1 = getDistance(eye[1], eye[5]);
-    const verticalDist2 = getDistance(eye[2], eye[4]);
-    const horizontalDist = getDistance(eye[0], eye[3]);
-    return (verticalDist1 + verticalDist2) / (2 * horizontalDist);
-  };
+  // Your existing helper functions (getEyeAspectRatio, getDistance, checkStraightFace)...
 
-  const getDistance = (point1: faceapi.Point, point2: faceapi.Point) => {
-    return Math.sqrt(
-      Math.pow(point2.x - point1.x, 2) + Math.pow(point2.y - point1.y, 2)
-    );
-  };
-
-  // Face detection loop
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    let holdInterval: NodeJS.Timeout;
-
-    const detectFace = async () => {
-      if (webcamRef.current?.video && modelsLoaded) {
-        try {
-          const detection = await faceapi
-            .detectSingleFace(
-              webcamRef.current.video,
-              new faceapi.TinyFaceDetectorOptions({
-                inputSize: 320,
-                scoreThreshold: 0.3
-              })
-            )
-            .withFaceLandmarks();
-
-          if (detection) {
-            setFaceDetected(true);
-            if (step === 'detecting') {
-              setStep('blinking');
-              toast.success('Face detected! Please blink twice...');
-            }
-            if (step === 'blinking') {
-              checkBlink(detection.landmarks);
-            }
-          } else {
-            setFaceDetected(false);
-            if (step === 'holding') {
-              setStep('detecting');
-              setHoldTimer(2);
-              setBlinkCount(0);
-              toast.error('Face lost! Please try again.');
-            }
-          }
-        } catch (error) {
-          console.error('Face detection error:', error);
-        }
-      }
-    };
-
-    if (['detecting', 'blinking', 'holding'].includes(step)) {
-      interval = setInterval(detectFace, 100);
-
-      if (step === 'holding' && faceDetected) {
-        holdInterval = setInterval(() => {
-          setHoldTimer(prev => {
-            if (prev <= 1) {
-              clearInterval(holdInterval);
-              autoCapture();
-              return 0;
-            }
-            return prev - 1;
-          });
-        }, 1000);
-      }
-    }
-
-    return () => {
-      clearInterval(interval);
-      clearInterval(holdInterval);
-    };
-  }, [step, modelsLoaded, faceDetected]);
-
-  const handleCameraStart = () => {
-    setCameraReady(true);
+  const startVerification = () => {
     setStep('initializing');
-    console.log('Camera started successfully');
-  };
-
-  const handleCameraError = (error: string | DOMException) => {
-    console.error('Camera error:', error);
-    toast.error('Failed to access camera. Please check permissions.');
+    setBlinkCount(0);
+    setCapturedImage(null);
   };
 
   const autoCapture = () => {
     if (webcamRef.current && blinkCount >= 2) {
       const imageSrc = webcamRef.current.getScreenshot();
-      setStep('processing');
       if (imageSrc) {
+        setCapturedImage(imageSrc);
+        setStep('processing');
         handleSubmit(imageSrc);
       }
-    } else {
-      toast.error('Verification incomplete. Please blink twice and hold still.');
-      setStep('detecting');
-      setBlinkCount(0);
-      setHoldTimer(2);
     }
   };
 
@@ -202,25 +160,10 @@ const KYCForm = () => {
   };
 
   const resetVerification = () => {
-    setStep('detecting');
+    setStep('instructions');
     setBlinkCount(0);
-    setHoldTimer(2);
+    setCapturedImage(null);
     setFaceDetected(false);
-  };
-
-  const getStepMessage = () => {
-    switch (step) {
-      case 'initializing':
-        return 'Initializing face detection...';
-      case 'detecting':
-        return 'Position your face in the frame';
-      case 'blinking':
-        return `Please blink twice (${blinkCount}/2 blinks detected)`;
-      case 'holding':
-        return `Hold still! Capturing in ${holdTimer} seconds...`;
-      default:
-        return '';
-    }
   };
 
   return (
@@ -235,12 +178,11 @@ const KYCForm = () => {
               <li>Ensure you're in a well-lit environment</li>
               <li>Remove glasses or face coverings</li>
               <li>Look directly at the camera</li>
-              <li>Blink twice when prompted</li>
-              <li>Hold still for final capture</li>
+              <li>Follow the on-screen instructions</li>
             </ol>
           </div>
           <button
-            onClick={() => setStep('detecting')}
+            onClick={startVerification}
             className="w-full bg-green-500 text-white p-3 rounded-md hover:bg-green-600 transition-colors"
           >
             Start Verification
@@ -248,7 +190,14 @@ const KYCForm = () => {
         </div>
       )}
 
-      {['initializing', 'detecting', 'blinking', 'holding'].includes(step) && (
+      {step === 'initializing' && (
+        <div className="text-center py-8">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mx-auto"></div>
+          <p className="mt-4">Initializing face detection...</p>
+        </div>
+      )}
+
+      {['initial-blink', 'look-straight', 'final-blink'].includes(step) && (
         <div className="space-y-4">
           <div className="relative">
             <Webcam
@@ -257,8 +206,6 @@ const KYCForm = () => {
               screenshotFormat="image/jpeg"
               videoConstraints={videoConstraints}
               className="w-full rounded-lg"
-              onUserMedia={handleCameraStart}
-              onUserMediaError={handleCameraError}
             />
             <div className={`absolute inset-0 border-4 rounded-lg transition-colors ${
               faceDetected ? 'border-green-500' : 'border-red-500'
@@ -266,17 +213,25 @@ const KYCForm = () => {
           </div>
           
           <div className="text-center">
-            <p className={`text-lg ${faceDetected ? 'text-green-600' : 'text-red-600'}`}>
-              {getStepMessage()}
-            </p>
+            {faceDetected ? (
+              <p className="text-green-600">
+                {step === 'initial-blink' && 'Please blink once'}
+                {step === 'look-straight' && 'Please look straight at the camera'}
+                {step === 'final-blink' && `Please blink twice (${blinkCount}/2)`}
+              </p>
+            ) : (
+              <p className="text-red-600">
+                No face detected. Please position your face in the frame
+              </p>
+            )}
           </div>
         </div>
       )}
 
-      {step === 'processing' && (
-        <div className="text-center py-4">
+      {(step === 'processing' || loading) && (
+        <div className="text-center py-8">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mx-auto"></div>
-          <p className="mt-2">Processing your verification...</p>
+          <p className="mt-4">Processing your verification...</p>
         </div>
       )}
 
