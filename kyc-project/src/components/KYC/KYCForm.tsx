@@ -133,21 +133,39 @@ const KYCForm = () => {
       // Submit KYC
       const response = await submitKYC(formData);
 
-      // Handle successful submission
-      if (response && response.success) {
-        toast.success('KYC Verification Successful!');
-        setStep('complete');
-
-        // Redirect after a short delay
-        setTimeout(() => {
-          navigate('/dashboard');
-        }, 2000);
-      } else {
-        throw new Error('Submission failed');
+      // Handle backend response
+      if (response.data && response.data.status === 'error') {
+        // Handle specific error messages from backend
+        toast.error(response.data.message || 'Verification failed');
+        resetVerification();
+        return;
       }
-    } catch (error) {
+
+      // Successful submission
+      toast.success('KYC Verification Successful!');
+      setStep('complete');
+
+      // Redirect after a short delay
+      setTimeout(() => {
+        navigate('/dashboard');
+      }, 2000);
+
+    } catch (error: any) {
       console.error('KYC Submission Error:', error);
-      toast.error('Verification failed. Please try again.');
+      
+      // Handle different types of errors
+      if (error.response) {
+        // The request was made and the server responded with a status code
+        const errorMessage = error.response.data.message || 'Verification failed';
+        toast.error(errorMessage);
+      } else if (error.request) {
+        // The request was made but no response was received
+        toast.error('No response from server. Please try again.');
+      } else {
+        // Something happened in setting up the request
+        toast.error('Error in KYC submission process');
+      }
+
       resetVerification();
     }
   };
