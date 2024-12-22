@@ -6,11 +6,9 @@ import { useNavigate } from 'react-router-dom';
 
 type VerificationStep = 
   | 'instructions' 
-  | 'initializing'
   | 'recording'
   | 'processing'
-  | 'complete'
-  | 'submission-success';
+  | 'complete';
 
 const KYCForm = () => {
   const navigate = useNavigate();
@@ -18,13 +16,8 @@ const KYCForm = () => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
-  const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<VerificationStep>('instructions');
   const [recordingTime, setRecordingTime] = useState(0);
-  const [submissionDetails, setSubmissionDetails] = useState<{
-    verificationId?: string;
-    timestamp?: string;
-  }>({});
 
   // Video recording constraints
   const videoConstraints = {
@@ -34,33 +27,44 @@ const KYCForm = () => {
   };
 
   // Start video recording
-  const startRecording = () => {
-    chunksRef.current = []; // Reset chunks
-    setStep('recording');
-    setRecordingTime(0);
+  const startRecording = async () => {
+    try {
+      // Ensure webcam is accessible
+      if (!webcamRef.current) {
+        toast.error('Webcam not initialized');
+        return;
+      }
 
-    // Ensure webcam is ready
-    if (webcamRef.current && webcamRef.current.stream) {
-      const stream = webcamRef.current.stream;
-      
+      // Get the media stream
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: true,
+        audio: false 
+      });
+
+      // Reset recording chunks
+      chunksRef.current = [];
+      setStep('recording');
+      setRecordingTime(0);
+
       // Create MediaRecorder
-      mediaRecorderRef.current = new MediaRecorder(stream, {
+      const mediaRecorder = new MediaRecorder(stream, {
         mimeType: 'video/webm'
       });
 
-      // Event listeners for recording
-      mediaRecorderRef.current.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunksRef.current.push(e.data);
+      // Setup event listeners
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunksRef.current.push(event.data);
         }
       };
 
-      mediaRecorderRef.current.onstop = handleStopRecording;
+      mediaRecorder.onstop = handleStopRecording;
 
       // Start recording
-      mediaRecorderRef.current.start();
+      mediaRecorder.start();
+      mediaRecorderRef.current = mediaRecorder;
 
-      // Start countdown timer
+      // Countdown timer
       const timer = setInterval(() => {
         setRecordingTime(prev => {
           if (prev >= 4) {
@@ -71,34 +75,39 @@ const KYCForm = () => {
           return prev + 1;
         });
       }, 1000);
-    } else {
-      toast.error('Webcam not accessible');
+
+    } catch (error) {
+      console.error('Recording start error:', error);
+      toast.error('Failed to start recording. Please check camera permissions.');
     }
   };
 
   // Stop recording
   const stopRecording = () => {
-    if (mediaRecorderRef.current && 
-        mediaRecorderRef.current.state !== 'inactive') {
+    if (mediaRecorderRef.current) {
       mediaRecorderRef.current.stop();
+      
+      // Stop all tracks to release camera
+      const stream = mediaRecorderRef.current.stream;
+      stream.getTracks().forEach(track => track.stop());
     }
   };
 
-  // Handle stop recording and submission
+  // Handle video submission
   const handleStopRecording = async () => {
     setStep('processing');
-    
-    // Create video blob
-    const videoBlob = new Blob(chunksRef.current, { type: 'video/webm' });
-    
-    // Validate blob size
-    if (videoBlob.size === 0) {
-      toast.error('No video recorded. Please try again.');
-      resetVerification();
-      return;
-    }
 
     try {
+      // Create video blob
+      const videoBlob = new Blob(chunksRef.current, { type: 'video/webm' });
+
+      // Validate blob
+      if (videoBlob.size === 0) {
+        toast.error('No video recorded. Please try again.');
+        resetVerification();
+        return;
+      }
+
       // Prepare form data
       const videoFile = new File([videoBlob], 'kyc_video.webm', { 
         type: 'video/webm' 
@@ -107,25 +116,18 @@ const KYCForm = () => {
       const formData = new FormData();
       formData.append('video', videoFile);
 
-      // Set loading state
-      setLoading(true);
-
       // Submit KYC
       const response = await submitKYC(formData);
 
       // Handle successful submission
       if (response && response.success) {
-        setSubmissionDetails({
-          verificationId: response.verificationId || generateVerificationId(),
-          timestamp: new Date().toLocaleString()
-        });
-        
-        setStep('submission-success');
-        
-        // Redirect after a delay
+        toast.success('KYC Verification Successful!');
+        setStep('complete');
+
+        // Redirect after a short delay
         setTimeout(() => {
           navigate('/dashboard');
-        }, 5000);
+        }, 2000);
       } else {
         throw new Error('Submission failed');
       }
@@ -133,14 +135,7 @@ const KYCForm = () => {
       console.error('KYC Submission Error:', error);
       toast.error('Verification failed. Please try again.');
       resetVerification();
-    } finally {
-      setLoading(false);
     }
-  };
-
-  // Generate a random verification ID if not provided by backend
-  const generateVerificationId = () => {
-    return `KYC-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
   };
 
   // Reset verification process
@@ -148,24 +143,8 @@ const KYCForm = () => {
     setStep('instructions');
     chunksRef.current = [];
     mediaRecorderRef.current = null;
-    setSubmissionDetails({});
+    setRecordingTime(0);
   };
-
-  // Request camera permissions on component mount
-  useEffect(() => {
-    const requestCameraPermission = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: true 
-        });
-        stream.getTracks().forEach(track => track.stop());
-      } catch (error) {
-        toast.error('Camera access denied. Please allow camera permissions.');
-      }
-    };
-
-    requestCameraPermission();
-  }, []);
 
   return (
     <div className="max-w-md mx-auto bg-white p-6 rounded-lg shadow-lg">
@@ -211,7 +190,7 @@ const KYCForm = () => {
       )}
 
       {/* Processing Step */}
-      {(step === 'processing' || loading) && (
+      {step === 'processing' && (
         <div className="text-center py-8">
           <div className="animate-spin rounded-full h-16 w-16 border-t-4 
           border-blue-500 mx-auto mb-4"></div>
@@ -219,45 +198,12 @@ const KYCForm = () => {
         </div>
       )}
 
-      {/* Submission Success Step */}
-      {step === 'submission-success' && (
-        <div className="text-center bg-green-50 p-6 rounded-lg">
-          <div className="text-green-500 text-6xl mb-4">
-            <svg 
-              xmlns="http://www.w3.org/2000/svg" 
-              className="h-16 w-16 mx-auto" 
-              viewBox="0 0 20 20" 
-              fill="currentColor"
-            >
-              <path 
-                fillRule="evenodd" 
-                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" 
-                clipRule="evenodd" 
-              />
-            </svg>
-          </div>
-          <h3 className="text-2xl font-semibold text-green-700 mb-4">
-            KYC Submitted Successfully!
-          </h3>
-          
-          <div className="bg-white p-4 rounded-md shadow-md text-left">
-            <p className="mb-2">
-              <strong>Verification ID:</strong> 
-              <span className="ml-2 text-blue-600">
-                {submissionDetails.verificationId}
-              </span>
-            </p>
-            <p>
-              <strong>Submitted At:</strong> 
-              <span className="ml-2">
-                {submissionDetails.timestamp}
-              </span>
-            </p>
-          </div>
-          
-          <div className="mt-4 text-gray-600">
-            <p>You will be redirected to the dashboard shortly...</p>
-          </div>
+      {/* Completion Step */}
+      {step === 'complete' && (
+        <div className="text-center">
+          <div className="text-green-500 text-6xl mb-4">✓</div>
+          <h3 className="text-2xl font-semibold">Verification Complete!</h3>
+          <p className="text-gray-600">Redirecting to dashboard...</p>
         </div>
       )}
     </div>
