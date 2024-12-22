@@ -1,6 +1,11 @@
-const https = require('https');
-const fs = require('fs');
-const path = require('path');
+// download-models.js
+import https from 'https';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const modelsDir = path.join(__dirname, 'public', 'models');
 
@@ -36,7 +41,7 @@ const models = [
   }
 ];
 
-models.forEach(model => {
+for (const model of models) {
   const filePath = path.join(modelsDir, model.name);
   https.get(model.url, (response) => {
     const fileStream = fs.createWriteStream(filePath);
@@ -46,5 +51,6 @@ models.forEach(model => {
     });
   }).on('error', (err) => {
     console.error(`Error downloading ${model.name}:`, err);
+    process.exit(1);
   });
-});
+}
