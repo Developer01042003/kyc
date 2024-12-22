@@ -28,10 +28,14 @@ const handleApiError = (error: AxiosError) => {
   throw error;
 };
 
+// Interceptor to add Authorization header only for authenticated requests
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  // Check if the request is for a signup or login
+  if (!config.url?.includes('auth/signup') && !config.url?.includes('auth/login')) {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
   }
   return config;
 });
