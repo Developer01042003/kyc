@@ -1,8 +1,9 @@
-import { HashRouter, Routes, Route } from 'react-router-dom'
-import { Toaster } from 'react-hot-toast'
-import LoginForm from './components/Auth/LoginForm'
-import SignupForm from './components/Auth/SignupForm'
-import KYCForm from './components/KYC/KYCForm'
+import { HashRouter, Routes, Route } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
+import LoginForm from './components/Auth/LoginForm';
+import SignupForm from './components/Auth/SignupForm';
+import KYCForm from './components/KYC/KYCForm';
+import Dashboard from './components/Dashboard/Dashboard';
 
 function App() {
   return (
@@ -13,12 +14,13 @@ function App() {
           <Routes>
             <Route path="/" element={<LoginForm />} />
             <Route path="/signup" element={<SignupForm />} />
+            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/kyc" element={<KYCForm />} />
           </Routes>
         </div>
       </div>
     </HashRouter>
-  )
+  );
 }
 
-export default App
+export default App;
