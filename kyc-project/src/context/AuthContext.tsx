@@ -1,24 +1,21 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-
-interface User {
-  id: string;
-  full_name: string;
-  email: string;
-  // Add other user properties as needed
-}
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
 interface AuthContextType {
-  user: User | null;
   isAuthenticated: boolean;
-  login: (token: string, userData: User) => void;
+  user: any | null;
+  login: (token: string, userData: any) => void;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
+interface AuthProviderProps {
+  children: ReactNode;
+}
+
+export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState<any | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -30,7 +27,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  const login = (token: string, userData: User) => {
+  const login = (token: string, userData: any) => {
     localStorage.setItem('token', token);
     localStorage.setItem('user', JSON.stringify(userData));
     setUser(userData);
@@ -58,3 +55,5 @@ export const useAuth = () => {
   }
   return context;
 };
+
+export default AuthContext;
