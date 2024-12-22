@@ -57,21 +57,15 @@ export const login = async (data: LoginData) => {
   }
 };
 
-export const submitKYC = async (imageSrc: string) => {
+// Updated submitKYC function for video file upload
+export const submitKYC = async (formData: FormData) => {
   try {
-    const fetchResponse = await fetch(imageSrc);
-    const blob = await fetchResponse.blob();
-    const file = new File([blob], 'selfie.jpg', { type: 'image/jpeg' });
-    
-    const formData = new FormData();
-    formData.append('selfie', file);
-
     const response = await api.post('/kyc/kyc/', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
-      }
+      },
     });
-    
+
     return response.data;
   } catch (error) {
     handleApiError(error as AxiosError);
