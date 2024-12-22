@@ -64,7 +64,7 @@ export const login = async (data: LoginData) => {
 // Updated submitKYC function for video file upload
 export const submitKYC = async (formData: FormData) => {
   try {
-    const response = await api.post('/kyc/kyc/', formData, {
+    const response = await api.post('/kyc/', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
