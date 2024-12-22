@@ -5,6 +5,7 @@ import { submitKYC } from '../../api/api';
 import { useNavigate } from 'react-router-dom';
 
 type VerificationStep = 
+  | 'permissions'
   | 'instructions' 
   | 'recording'
   | 'processing'
@@ -16,30 +17,46 @@ const KYCForm = () => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
-  const [step, setStep] = useState<VerificationStep>('instructions');
+  const [step, setStep] = useState<VerificationStep>('permissions');
   const [recordingTime, setRecordingTime] = useState(0);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
 
   // Video recording constraints
   const videoConstraints = {
-    width: 1280,
-    height: 720,
-    facingMode: "user",
+    width: { ideal: 1280 },
+    height: { ideal: 720 },
+    aspectRatio: 16 / 9,
+    facingMode: "user"
+  };
+
+  // Request Camera Permissions
+  const requestCameraPermission = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: "user"
+        },
+        audio: false
+      });
+
+      setCameraStream(stream);
+      setStep('instructions');
+      toast.success('Camera access granted');
+    } catch (error) {
+      console.error('Camera permission error:', error);
+      toast.error('Camera access denied. Please check permissions.');
+    }
   };
 
   // Start video recording
   const startRecording = async () => {
     try {
-      // Ensure webcam is accessible
-      if (!webcamRef.current) {
-        toast.error('Webcam not initialized');
+      if (!cameraStream) {
+        toast.error('Camera stream not available');
         return;
       }
-
-      // Get the media stream
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: true,
-        audio: false 
-      });
 
       // Reset recording chunks
       chunksRef.current = [];
@@ -47,7 +64,7 @@ const KYCForm = () => {
       setRecordingTime(0);
 
       // Create MediaRecorder
-      const mediaRecorder = new MediaRecorder(stream, {
+      const mediaRecorder = new MediaRecorder(cameraStream, {
         mimeType: 'video/webm'
       });
 
@@ -78,7 +95,8 @@ const KYCForm = () => {
 
     } catch (error) {
       console.error('Recording start error:', error);
-      toast.error('Failed to start recording. Please check camera permissions.');
+      toast.error('Failed to start recording');
+      resetVerification();
     }
   };
 
@@ -86,10 +104,6 @@ const KYCForm = () => {
   const stopRecording = () => {
     if (mediaRecorderRef.current) {
       mediaRecorderRef.current.stop();
-      
-      // Stop all tracks to release camera
-      const stream = mediaRecorderRef.current.stream;
-      stream.getTracks().forEach(track => track.stop());
     }
   };
 
@@ -140,17 +154,51 @@ const KYCForm = () => {
 
   // Reset verification process
   const resetVerification = () => {
-    setStep('instructions');
+    // Stop existing stream
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+    }
+
+    setStep('permissions');
     chunksRef.current = [];
     mediaRecorderRef.current = null;
+    setCameraStream(null);
     setRecordingTime(0);
   };
+
+  // Cleanup stream on unmount
+  useEffect(() => {
+    return () => {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [cameraStream]);
 
   return (
     <div className="max-w-md mx-auto bg-white p-6 rounded-lg shadow-lg">
       <h2 className="text-2xl font-bold mb-4 text-center">
         KYC Video Verification
       </h2>
+
+      {/* Permissions Step */}
+      {step === 'permissions' && (
+        <div className="space-y-4 text-center">
+          <div className="bg-blue-50 p-4 rounded-md">
+            <h3 className="font-semibold mb-2">Camera Access Required</h3>
+            <p className="mb-4">
+              We need access to your camera to complete the verification process.
+            </p>
+          </div>
+          <button
+            onClick={requestCameraPermission}
+            className="w-full bg-blue-500 text-white p-3 rounded-md 
+            hover:bg-blue-600 transition-colors"
+          >
+            Grant Camera Access
+          </button>
+        </div>
+      )}
 
       {/* Instructions Step */}
       {step === 'instructions' && (
@@ -175,13 +223,19 @@ const KYCForm = () => {
       )}
 
       {/* Recording Step */}
-      {step === 'recording' && (
+      {step === 'recording' && cameraStream && (
         <div className="text-center">
           <Webcam
             ref={webcamRef}
             audio={false}
             videoConstraints={videoConstraints}
             className="w-full rounded-lg mb-4"
+            mirrored={true}
+            style={{ 
+              width: '100%', 
+              height: 'auto', 
+              objectFit: 'cover' 
+            }}
           />
           <div className="text-xl font-bold text-red-500">
             Recording: {4 - recordingTime} seconds left
