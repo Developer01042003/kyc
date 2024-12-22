@@ -8,6 +8,16 @@
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="./src/main.tsx"></script>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Fallback for module loading
+      window.addEventListener('error', function(e) {
+        if (e.message.includes('Failed to load module script')) {
+          const script = document.createElement('script');
+          script.src = e.target.src.replace('type="module"', '');
+          document.body.appendChild(script);
+        }
+      });
+    </script>
   </body>
 </html>
