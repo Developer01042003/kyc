@@ -122,6 +122,14 @@ const KYCForm = () => {
         return;
       }
 
+      // Validate blob size (optional: limit to 10MB)
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (videoBlob.size > maxSize) {
+        toast.error('Video file is too large. Maximum 10MB allowed.');
+        resetVerification();
+        return;
+      }
+
       // Prepare form data
       const videoFile = new File([videoBlob], 'kyc_video.webm', { 
         type: 'video/webm' 
@@ -133,39 +141,25 @@ const KYCForm = () => {
       // Submit KYC
       const response = await submitKYC(formData);
 
-      // Handle backend response
-      if (response.data && response.data.status === 'error') {
-        // Handle specific error messages from backend
-        toast.error(response.data.message || 'Verification failed');
-        resetVerification();
-        return;
-      }
+      // Handle response
+      if (response.success) {
+        // Success scenario
+        toast.success(response.message || 'KYC Verification Successful!');
+        setStep('complete');
 
-      // Successful submission
-      toast.success('KYC Verification Successful!');
-      setStep('complete');
-
-      // Redirect after a short delay
-      setTimeout(() => {
-        navigate('/dashboard');
-      }, 2000);
-
-    } catch (error: any) {
-      console.error('KYC Submission Error:', error);
-      
-      // Handle different types of errors
-      if (error.response) {
-        // The request was made and the server responded with a status code
-        const errorMessage = error.response.data.message || 'Verification failed';
-        toast.error(errorMessage);
-      } else if (error.request) {
-        // The request was made but no response was received
-        toast.error('No response from server. Please try again.');
+        // Redirect after a short delay
+        setTimeout(() => {
+          navigate('/dashboard');
+        }, 2000);
       } else {
-        // Something happened in setting up the request
-        toast.error('Error in KYC submission process');
+        // Error scenario
+        toast.error(response.message || 'Verification failed');
+        resetVerification();
       }
 
+    } catch (error) {
+      console.error('KYC Submission Error:', error);
+      toast.error('An unexpected error occurred during verification');
       resetVerification();
     }
   };
@@ -273,9 +267,26 @@ const KYCForm = () => {
       {/* Completion Step */}
       {step === 'complete' && (
         <div className="text-center">
-          <div className="text-green-500 text-6xl mb-4">✓</div>
-          <h3 className="text-2xl font-semibold">Verification Complete!</h3>
-          <p className="text-gray-600">Redirecting to dashboard...</p>
+          <div className="text-green-500 text-6xl mb-4">
+            <svg 
+              xmlns="http://www.w3.org/2000/svg" 
+              className="h-16 w-16 mx-auto" 
+              viewBox="0 0 20 20" 
+              fill="currentColor"
+            >
+              <path 
+                fillRule="evenodd" 
+                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" 
+                clipRule="evenodd" 
+              />
+            </svg>
+          </div>
+          <h3 className="text-2xl font-semibold text-green-700">
+            Verification Complete!
+          </h3>
+          <p className="text-gray-600 mt-2">
+            You will be redirected to the dashboard shortly...
+          </p>
         </div>
       )}
     </div>
