@@ -4,7 +4,15 @@ import { toast } from 'react-hot-toast';
 import { submitKYC } from '../../api/api';
 import { useNavigate } from 'react-router-dom';
 import * as faceapi from 'face-api.js';
-import type { VerificationStep } from '../../types/kyc';
+
+type VerificationStep = 
+  | 'instructions' 
+  | 'initializing'
+  | 'initial-blink' 
+  | 'look-straight' 
+  | 'final-blink' 
+  | 'processing' 
+  | 'complete';
 
 const KYCForm = () => {
   const navigate = useNavigate();
@@ -16,6 +24,8 @@ const KYCForm = () => {
   const [faceDetected, setFaceDetected] = useState(false);
   const [blinkCount, setBlinkCount] = useState(0);
   const lastBlinkTime = useRef(Date.now());
+  const [holdTimer, setHoldTimer] = useState(2);
+  const [straightFace, setStraightFace] = useState(false);
 
   const videoConstraints = {
     width: 1280,
@@ -23,31 +33,23 @@ const KYCForm = () => {
     facingMode: "user"
   };
 
-  // Load face-api models
+  // Initialize face detection models
   useEffect(() => {
     const loadModels = async () => {
       try {
         setLoading(true);
         console.log('Loading face detection models...');
-        
-        // Test if models are accessible
-        const testResponse = await fetch('/models/tiny_face_detector_model-weights_manifest.json');
-        if (!testResponse.ok) {
-          throw new Error('Models not accessible');
-        }
-
         await Promise.all([
           faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
           faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
           faceapi.nets.faceExpressionNet.loadFromUri('/models')
         ]);
-
-        console.log('Face detection models loaded successfully');
         setModelsLoaded(true);
+        console.log('Face detection models loaded successfully');
         toast.success('Face detection initialized');
       } catch (error) {
-        console.error('Error loading face detection models:', error);
-        toast.error('Failed to initialize face detection. Please refresh the page.');
+        console.error('Error loading models:', error);
+        toast.error('Failed to initialize face detection. Please refresh.');
       } finally {
         setLoading(false);
       }
@@ -78,7 +80,6 @@ const KYCForm = () => {
 
         if (detection) {
           setFaceDetected(true);
-          
           if (step === 'initial-blink' || step === 'final-blink') {
             checkBlink(detection.landmarks);
           } else if (step === 'look-straight') {
@@ -86,6 +87,9 @@ const KYCForm = () => {
           }
         } else {
           setFaceDetected(false);
+          if (step === 'look-straight') {
+            setStraightFace(false);
+          }
         }
       } catch (error) {
         console.error('Face detection error:', error);
@@ -96,7 +100,9 @@ const KYCForm = () => {
       interval = setInterval(detectFace, 100);
     }
 
-    return () => clearInterval(interval);
+    return () => {
+      if (interval) clearInterval(interval);
+    };
   }, [step, modelsLoaded]);
 
   const checkBlink = (landmarks: faceapi.FaceLandmarks68) => {
@@ -112,6 +118,7 @@ const KYCForm = () => {
       lastBlinkTime.current = now;
       setBlinkCount(prev => {
         const newCount = prev + 1;
+        console.log('Blink count:', newCount);
         if (step === 'initial-blink' && newCount >= 1) {
           toast.success('Initial blink detected!');
           setStep('look-straight');
@@ -124,20 +131,60 @@ const KYCForm = () => {
     }
   };
 
-  // Your existing helper functions (getEyeAspectRatio, getDistance, checkStraightFace)...
+  const getEyeAspectRatio = (eye: faceapi.Point[]) => {
+    const verticalDist1 = getDistance(eye[1], eye[5]);
+    const verticalDist2 = getDistance(eye[2], eye[4]);
+    const horizontalDist = getDistance(eye[0], eye[3]);
+    return (verticalDist1 + verticalDist2) / (2 * horizontalDist);
+  };
+
+  const getDistance = (point1: faceapi.Point, point2: faceapi.Point) => {
+    return Math.sqrt(
+      Math.pow(point2.x - point1.x, 2) + Math.pow(point2.y - point1.y, 2)
+    );
+  };
+
+  const checkStraightFace = (detection: any) => {
+    const landmarks = detection.landmarks;
+    const nose = landmarks.getNose();
+    const jawline = landmarks.getJawOutline();
+    
+    const faceCenter = {
+      x: (jawline[0].x + jawline[16].x) / 2,
+      y: (jawline[0].y + jawline[16].y) / 2
+    };
+    
+    const videoCenter = {
+      x: (webcamRef.current?.video?.width || 0) / 2,
+      y: (webcamRef.current?.video?.height || 0) / 2
+    };
+
+    const distanceFromCenter = Math.sqrt(
+      Math.pow(faceCenter.x - videoCenter.x, 2) + 
+      Math.pow(faceCenter.y - videoCenter.y, 2)
+    );
+
+    if (distanceFromCenter < 100) {
+      setStraightFace(true);
+      toast.success('Face is centered, please blink twice');
+      setStep('final-blink');
+    }
+  };
 
   const startVerification = () => {
     setStep('initializing');
     setBlinkCount(0);
     setCapturedImage(null);
+    setStraightFace(false);
+    setHoldTimer(2);
   };
 
   const autoCapture = () => {
-    if (webcamRef.current && blinkCount >= 2) {
+    if (webcamRef.current) {
       const imageSrc = webcamRef.current.getScreenshot();
+      setCapturedImage(imageSrc);
+      setStep('processing');
       if (imageSrc) {
-        setCapturedImage(imageSrc);
-        setStep('processing');
         handleSubmit(imageSrc);
       }
     }
@@ -164,6 +211,8 @@ const KYCForm = () => {
     setBlinkCount(0);
     setCapturedImage(null);
     setFaceDetected(false);
+    setStraightFace(false);
+    setHoldTimer(2);
   };
 
   return (
