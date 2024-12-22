@@ -17,8 +17,8 @@ const KYCForm = () => {
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<VerificationStep>('instructions');
   const [capturedVideo, setCapturedVideo] = useState<Blob | null>(null);
-  const [blinkCount, setBlinkCount] = useState(0);
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
+  const [recordingTimeout, setRecordingTimeout] = useState<NodeJS.Timeout | null>(null);
 
   const videoConstraints = {
     width: 1280,
@@ -29,7 +29,6 @@ const KYCForm = () => {
   // Start video recording and initialize necessary data
   const startVerification = () => {
     setStep('recording');
-    setBlinkCount(0);
     setCapturedVideo(null);
     setVideoStream(null);
 
@@ -40,10 +39,15 @@ const KYCForm = () => {
         setVideoStream(stream);
       }
     }
+
     toast.success('Please blink twice during the video recording.');
-    setTimeout(() => {
+    
+    // Start the timer for 4 seconds of video recording
+    const timer = setTimeout(() => {
       stopRecording();
     }, 4000);  // Stop recording after 4 seconds
+
+    setRecordingTimeout(timer);
   };
 
   const stopRecording = () => {
@@ -59,7 +63,7 @@ const KYCForm = () => {
         const videoBlob = new Blob(chunks, { type: 'video/webm' });
         setCapturedVideo(videoBlob);
         setStep('processing');
-        handleSubmit(videoBlob);
+        handleSubmit(videoBlob); // Auto submit the video once recording is finished
       };
 
       recorder.start();
@@ -77,7 +81,7 @@ const KYCForm = () => {
       await submitKYC(formData);
       toast.success('KYC submitted successfully!');
       setStep('complete');
-      setTimeout(() => navigate('/dashboard'), 2000);
+      setTimeout(() => navigate('/dashboard'), 2000); // Redirect after submission
     } catch (error) {
       console.error('KYC submission error:', error);
       toast.error('Failed to submit KYC. Please try again.');
@@ -89,8 +93,10 @@ const KYCForm = () => {
 
   const resetVerification = () => {
     setStep('instructions');
-    setBlinkCount(0);
     setCapturedVideo(null);
+    if (recordingTimeout) {
+      clearTimeout(recordingTimeout);
+    }
   };
 
   return (
